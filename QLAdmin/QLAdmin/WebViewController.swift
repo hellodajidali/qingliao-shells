@@ -1,15 +1,16 @@
 import UIKit
 import WebKit
 
-/// 轻聊 WebView 壳 v1.1.0
+/// 轻聊 WebView 壳 v1.1.1
 /// - 默认地址改成 m.youwuapp.top（www 那条在部分手机上解析有问题）
 /// - 不再常驻黑色日志框；只有「打开失败」时才会把日志显示在错误页里
 /// - 右上角一个很淡的齿轮：换域名/换地址用
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
-    // 每个 App 只改这两行
+    // 每个 App 只改这三行
     let defaultURL = "https://m.youwuapp.top/houtai"
-    let uaSuffix = "QingliaoAdmin/1.1.0"
+    let appTitle = "轻聊"
+    let uaSuffix = "QingliaoAdmin/1.1.1"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
@@ -62,7 +63,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         gear.setTitleColor(.gray, for: .normal)
         gear.alpha = 0.28
         gear.translatesAutoresizingMaskIntoConstraints = false
-        gear.addTarget(self, action: #selector(editEntry), for: .touchUpInside)
+        gear.addTarget(self, action: #selector(gearTapped), for: .touchUpInside)
         view.addSubview(gear)
         NSLayoutConstraint.activate([
             gear.widthAnchor.constraint(equalToConstant: 30),
@@ -71,7 +72,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
         ])
 
-        log("启动 v1.1.0 · " + entryURL)
+        log("启动 v1.1.1 · " + entryURL)
         clearCacheThenLoad()
     }
 
@@ -95,6 +96,28 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     @objc func kbWillHide() {
         webBottom.constant = 0
         UIView.animate(withDuration: 0.18) { self.view.layoutIfNeeded() }
+    }
+
+    /// 齿轮菜单：刷新页面（网页改了不用重装）/ 改地址 / 恢复默认
+    @objc func gearTapped() {
+        let sheet = UIAlertController(title: appTitle + " " + (uaSuffix.components(separatedBy: "/").last ?? ""),
+                                      message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: "刷新页面（保留登录）", style: .default) { _ in
+            self.log("手动刷新")
+            self.clearCacheThenLoad()
+        })
+        sheet.addAction(UIAlertAction(title: "改地址…", style: .default) { _ in self.editEntry() })
+        sheet.addAction(UIAlertAction(title: "恢复默认地址", style: .destructive) { _ in
+            UserDefaults.standard.removeObject(forKey: "ql_entry")
+            self.log("恢复默认 " + self.defaultURL)
+            self.clearCacheThenLoad()
+        })
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = gear
+            pop.sourceRect = gear.bounds
+        }
+        present(sheet, animated: true)
     }
 
     /// 换域名 / 换地址：改完存本机，不用重装 App

@@ -30,7 +30,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.customUserAgent = agentName + " " + (webView.value(forKey: "userAgent") as? String ?? "")
+        webView.customUserAgent = agentName   // 别用 KVC 取 userAgent，会崩
         webView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(webView)
 

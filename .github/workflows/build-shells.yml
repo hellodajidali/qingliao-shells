@@ -1,0 +1,75 @@
+name: Build 轻聊壳 (轻聊 + 尤雾排单)
+
+on:
+  push:
+    paths:
+      - 'QLAdmin/**'
+      - 'QLWapian/**'
+      - '.github/workflows/build-shells.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version
+      - run: brew install xcodegen
+
+      - name: Generate projects
+        run: |
+          cd QLAdmin && xcodegen generate --spec project.yml
+          cd ../QLWapian && xcodegen generate --spec project.yml
+
+      - name: Build QLAdmin (iOS 15+, no embedded swift libs)
+        run: |
+          cd QLAdmin
+          xcodebuild -project QLAdmin.xcodeproj -scheme QLAdmin \
+            -sdk iphoneos -configuration Release -derivedDataPath Build \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Build QLWapian (iOS 15+, no embedded swift libs)
+        run: |
+          cd QLWapian
+          xcodebuild -project QLWapian.xcodeproj -scheme QLWapian \
+            -sdk iphoneos -configuration Release -derivedDataPath Build \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            QLAdmin/build.log
+            QLWapian/build.log
+          compression-level: 0
+
+      - name: Show errors
+        if: failure()
+        run: |
+          grep -n "error:" QLAdmin/build.log QLWapian/build.log | head -60 | \
+            while IFS= read -r line; do echo "::error::$line"; done
+
+      - name: Package IPAs
+        run: |
+          mkdir -p out/QLAdmin/Payload out/QLWapian/Payload
+          cp -r QLAdmin/Build/Build/Products/Release-iphoneos/QLAdmin.app out/QLAdmin/Payload/
+          cp -r QLWapian/Build/Build/Products/Release-iphoneos/QLWapian.app out/QLWapian/Payload/
+          (cd out/QLAdmin && zip -qr ../../轻聊.ipa Payload)
+          (cd out/QLWapian && zip -qr ../../尤雾排单.ipa Payload)
+          ls -la *.ipa
+
+      - name: Upload IPAs
+        uses: actions/upload-artifact@v4
+        with:
+          name: qingliao-shells
+          path: |
+            轻聊.ipa
+            尤雾排单.ipa
+          compression-level: 0

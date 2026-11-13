@@ -8,7 +8,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     // 每个 App 只改这两行（defaultURL 是出厂地址，用户可在 App 里改，存本机）
     let defaultURL = "https://www.youwuapp.top/f?gid=162&pw=1"
-    let uaSuffix = "YouwuPindan/1.0.3"
+    let uaSuffix = "YouwuPindan/1.0.4"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
@@ -61,7 +61,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         gear.addTarget(self, action: #selector(editEntry), for: .touchUpInside)
         view.addSubview(gear)
 
-        log("启动 v1.0.3 · 当前地址 " + entryURL)
+        log("启动 v1.0.4 · 当前地址 " + entryURL)
         probeNetwork()
         clearCacheThenLoad()
     }
@@ -75,25 +75,33 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         logView.scrollRangeToVisible(end)
     }
 
-    /// 用系统的 URLSession 直连一次，看看 App 到底有没有网
+    /// 两条通道各探一次：域名（走 DNS） + 服务器 IP（绕过 DNS）
     func probeNetwork() {
         let ts = Int(Date().timeIntervalSince1970)
         let sep = entryURL.contains("?") ? "&" : "?"
-        guard let url = URL(string: entryURL + sep + "probe=" + String(ts)) else { return }
-        var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 12)
+        if let u = URL(string: entryURL + sep + "probe=" + String(ts)) {
+            probe(u, tag: "域名")
+        }
+        if let u = URL(string: "http://189.105.66.133:8080/api/version?probe=" + String(ts)) {
+            probe(u, tag: "IP直连")
+        }
+    }
+
+    func probe(_ url: URL, tag: String) {
+        var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         req.httpMethod = "GET"
         let conf = URLSessionConfiguration.ephemeral
         conf.waitsForConnectivity = false
-        conf.timeoutIntervalForRequest = 12
-        log("URLSession 探测 " + url.absoluteString)
+        conf.timeoutIntervalForRequest = 10
+        log("探测(\(tag)) " + url.host.websafe)
         URLSession(configuration: conf).dataTask(with: req) { [weak self] data, resp, err in
             DispatchQueue.main.async {
                 if let e = err as NSError? {
-                    self?.log("探测失败 [\(e.code)] \(e.localizedDescription)")
+                    self?.log("探测(\(tag))失败 [\(e.code)] \(e.localizedDescription)")
                 } else if let h = resp as? HTTPURLResponse {
-                    self?.log("探测成功 HTTP \(h.statusCode)，收到 \(data?.count ?? 0) 字节")
+                    self?.log("探测(\(tag))成功 HTTP \(h.statusCode) \(data?.count ?? 0)字节")
                 } else {
-                    self?.log("探测返回空")
+                    self?.log("探测(\(tag))返回空")
                 }
             }
         }.resume()
@@ -282,4 +290,8 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         }
         return nil
     }
+}
+
+private extension Optional where Wrapped == String {
+    var websafe: String { return self ?? "" }
 }

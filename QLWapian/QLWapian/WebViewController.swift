@@ -1,7 +1,7 @@
 import UIKit
 import WebKit
 
-/// 轻聊 WebView 壳 v1.0.5
+/// 轻聊 WebView 壳 v1.1.0
 /// - 默认地址改成 m.youwuapp.top（www 那条在部分手机上解析有问题）
 /// - 不再常驻黑色日志框；只有「打开失败」时才会把日志显示在错误页里
 /// - 右上角一个很淡的齿轮：换域名/换地址用
@@ -9,11 +9,12 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     // 每个 App 只改这两行
     let defaultURL = "https://m.youwuapp.top/f?gid=162&pw=1"
-    let uaSuffix = "YouwuPindan/1.0.5"
+    let uaSuffix = "YouwuPindan/1.1.0"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
     var gear: UIButton!
+    var webBottom: NSLayoutConstraint!
     var retryBox: UIView?
     var lines: [String] = []
 
@@ -28,14 +29,27 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         }
 
-        webView = WKWebView(frame: view.bounds, configuration: cfg)
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView = WKWebView(frame: .zero, configuration: cfg)
+        webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+        /* 网页不再铺到状态栏下面（以前标题被时间/电量压住），也不再自己算安全区 */
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Mobile/15E148 Safari/604.1 " + uaSuffix
         view.addSubview(webView)
+        webBottom = webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        NSLayoutConstraint.activate([
+            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webBottom,
+        ])
+        /* 键盘弹出/收起：把网页底边抬到键盘上面，登录按钮和输入框才点得到 */
+        NotificationCenter.default.addObserver(self, selector: #selector(kbWillChange(_:)),
+                                               name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(kbWillHide),
+                                               name: UIResponder.keyboardWillHideNotification, object: nil)
 
         let rc = UIRefreshControl()
         rc.addTarget(self, action: #selector(pullRefresh), for: .valueChanged)
@@ -47,12 +61,17 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         gear.titleLabel?.font = UIFont.systemFont(ofSize: 17)
         gear.setTitleColor(.gray, for: .normal)
         gear.alpha = 0.28
-        gear.frame = CGRect(x: view.bounds.width - 34, y: 40, width: 30, height: 30)
-        gear.autoresizingMask = [.flexibleLeftMargin]
+        gear.translatesAutoresizingMaskIntoConstraints = false
         gear.addTarget(self, action: #selector(editEntry), for: .touchUpInside)
         view.addSubview(gear)
+        NSLayoutConstraint.activate([
+            gear.widthAnchor.constraint(equalToConstant: 30),
+            gear.heightAnchor.constraint(equalToConstant: 30),
+            gear.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -2),
+            gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+        ])
 
-        log("启动 v1.0.5 · " + entryURL)
+        log("启动 v1.1.0 · " + entryURL)
         clearCacheThenLoad()
     }
 
@@ -63,6 +82,20 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     }
 
     @objc func pullRefresh() { clearCacheThenLoad() }
+
+    /* 键盘：网页底边跟着键盘走，登录按钮 / 输入框不会被盖住 */
+    @objc func kbWillChange(_ n: Notification) {
+        guard let f = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+        let kb = max(0, view.bounds.height - f.origin.y)          // 键盘从底往上占多高
+        let inset = view.safeAreaInsets.bottom                     // 网页底边本来就在安全区上
+        webBottom.constant = -max(0, kb - inset)
+        UIView.animate(withDuration: 0.18) { self.view.layoutIfNeeded() }
+    }
+
+    @objc func kbWillHide() {
+        webBottom.constant = 0
+        UIView.animate(withDuration: 0.18) { self.view.layoutIfNeeded() }
+    }
 
     /// 换域名 / 换地址：改完存本机，不用重装 App
     @objc func editEntry() {

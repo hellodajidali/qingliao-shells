@@ -81,8 +81,8 @@ jobs:
       - name: Package IPAs
         run: |
           set -e
-          pack15() { mkdir -p out15/Payload && cp -r "$1" out15/Payload/ && (cd out15 && rm -f "../$2" && zip -qr "../$2" Payload); }
-          pack14() { mkdir -p out14/Payload && cp -r "$1" out14/Payload/ && (cd out14 && rm -f "../$2" && zip -qr "../$2" Payload); }
+          pack15() { rm -rf out15; mkdir -p out15/Payload && cp -r "$1" out15/Payload/ && (cd out15 && rm -f "../$2" && zip -qr "../$2" Payload); }
+          pack14() { rm -rf out14; mkdir -p out14/Payload && cp -r "$1" out14/Payload/ && (cd out14 && rm -f "../$2" && zip -qr "../$2" Payload); }
           pack15 QLAdmin/Build/Build/Products/Release-iphoneos/QLAdmin.app    "轻聊.ipa"
           pack15 QLWapian/Build/Build/Products/Release-iphoneos/QLWapian.app  "尤雾排单.ipa"
           pack14 QLAdmin/Build14/Build/Products/Release-iphoneos/QLAdmin.app   "轻聊-兼容14.ipa"

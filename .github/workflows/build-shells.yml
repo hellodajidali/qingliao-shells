@@ -22,7 +22,8 @@ jobs:
           cd QLAdmin && xcodegen generate --spec project.yml
           cd ../QLWapian && xcodegen generate --spec project.yml
 
-      - name: Build QLAdmin (iOS 15+, no embedded swift libs)
+      # ---------- 主力版：iOS 15+（15.4.1 / 16.1 的 TrollStore） ----------
+      - name: Build QLAdmin (iOS 15+)
         run: |
           cd QLAdmin
           xcodebuild -project QLAdmin.xcodeproj -scheme QLAdmin \
@@ -31,13 +32,32 @@ jobs:
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
-      - name: Build QLWapian (iOS 15+, no embedded swift libs)
+      - name: Build QLWapian (iOS 15+)
         run: |
           cd QLWapian
           xcodebuild -project QLWapian.xcodeproj -scheme QLWapian \
             -sdk iphoneos -configuration Release -derivedDataPath Build \
             IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      # ---------- 兼容版：iOS 14.0+（iPad mini 5 / 14.8.1），iPhone+iPad 通用 ----------
+      - name: Build QLAdmin (iOS 14+)
+        run: |
+          cd QLAdmin
+          xcodebuild -project QLAdmin.xcodeproj -scheme QLAdmin \
+            -sdk iphoneos -configuration Release -derivedDataPath Build14 \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 TARGETED_DEVICE_FAMILY="1,2" \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build14.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Build QLWapian (iOS 14+)
+        run: |
+          cd QLWapian
+          xcodebuild -project QLWapian.xcodeproj -scheme QLWapian \
+            -sdk iphoneos -configuration Release -derivedDataPath Build14 \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0 TARGETED_DEVICE_FAMILY="1,2" \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build14.log
           exit ${PIPESTATUS[0]}
 
       - name: Upload build logs
@@ -48,21 +68,25 @@ jobs:
           path: |
             QLAdmin/build.log
             QLWapian/build.log
+            QLAdmin/build14.log
+            QLWapian/build14.log
           compression-level: 0
 
       - name: Show errors
         if: failure()
         run: |
-          grep -n "error:" QLAdmin/build.log QLWapian/build.log | head -60 | \
+          grep -n "error:" QLAdmin/build.log QLWapian/build.log QLAdmin/build14.log QLWapian/build14.log 2>/dev/null | head -60 | \
             while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Package IPAs
         run: |
-          mkdir -p out/QLAdmin/Payload out/QLWapian/Payload
-          cp -r QLAdmin/Build/Build/Products/Release-iphoneos/QLAdmin.app out/QLAdmin/Payload/
-          cp -r QLWapian/Build/Build/Products/Release-iphoneos/QLWapian.app out/QLWapian/Payload/
-          (cd out/QLAdmin && zip -qr ../../轻聊.ipa Payload)
-          (cd out/QLWapian && zip -qr ../../尤雾排单.ipa Payload)
+          set -e
+          pack15() { mkdir -p out15/Payload && cp -r "$1" out15/Payload/ && (cd out15 && rm -f "../$2" && zip -qr "../$2" Payload); }
+          pack14() { mkdir -p out14/Payload && cp -r "$1" out14/Payload/ && (cd out14 && rm -f "../$2" && zip -qr "../$2" Payload); }
+          pack15 QLAdmin/Build/Build/Products/Release-iphoneos/QLAdmin.app    "轻聊.ipa"
+          pack15 QLWapian/Build/Build/Products/Release-iphoneos/QLWapian.app  "尤雾排单.ipa"
+          pack14 QLAdmin/Build14/Build/Products/Release-iphoneos/QLAdmin.app   "轻聊-兼容14.ipa"
+          pack14 QLWapian/Build14/Build/Products/Release-iphoneos/QLWapian.app "尤雾排单-兼容14.ipa"
           ls -la *.ipa
 
       - name: Upload IPAs
@@ -72,4 +96,6 @@ jobs:
           path: |
             轻聊.ipa
             尤雾排单.ipa
+            轻聊-兼容14.ipa
+            尤雾排单-兼容14.ipa
           compression-level: 0

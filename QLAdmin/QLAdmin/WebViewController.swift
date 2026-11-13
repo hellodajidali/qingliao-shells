@@ -6,9 +6,10 @@ import WebKit
 /// 用来分清「整个 App 没网」还是「只有 WKWebView 卡住」。
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
-    // 每个 App 只改这两行
-    let entryURL = "https://www.youwuapp.top/houtai"
-    let uaSuffix = "QingliaoAdmin/1.0.2"
+    // 每个 App 只改这两行（defaultURL 是出厂地址，用户可在 App 里改，存本机）
+    let defaultURL = "https://www.youwuapp.top/houtai"
+    let uaSuffix = "QingliaoAdmin/1.0.3"
+    var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
     var logView: UITextView!
@@ -49,7 +50,18 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         logView.textContainerInset = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
         view.addSubview(logView)
 
-        log("启动 v1.0.2")
+        let gear = UIButton(type: .system)
+        gear.setTitle("地址", for: .normal)
+        gear.titleLabel?.font = UIFont.systemFont(ofSize: 12, weight: .medium)
+        gear.setTitleColor(.white, for: .normal)
+        gear.backgroundColor = UIColor(white: 0, alpha: 0.55)
+        gear.layer.cornerRadius = 8
+        gear.frame = CGRect(x: view.bounds.width - 58, y: 44, width: 46, height: 26)
+        gear.autoresizingMask = [.flexibleLeftMargin]
+        gear.addTarget(self, action: #selector(editEntry), for: .touchUpInside)
+        view.addSubview(gear)
+
+        log("启动 v1.0.3 · 当前地址 " + entryURL)
         probeNetwork()
         clearCacheThenLoad()
     }
@@ -88,6 +100,36 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     }
 
     @objc func pullRefresh() { probeNetwork(); clearCacheThenLoad() }
+
+    /// 换域名 / 换地址：改完存本机，不用重装 App
+    @objc func editEntry() {
+        let alert = UIAlertController(title: "打开地址", message: "换域名了就在这改，存到本机，不用重装", preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = self.entryURL
+            tf.placeholder = self.defaultURL
+            tf.autocapitalizationType = .none
+            tf.autocorrectionType = .no
+            tf.keyboardType = .URL
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "恢复默认", style: .destructive) { _ in
+            UserDefaults.standard.removeObject(forKey: "ql_entry")
+            self.log("已恢复默认 " + self.defaultURL)
+            self.probeNetwork(); self.clearCacheThenLoad()
+        })
+        alert.addAction(UIAlertAction(title: "保存并打开", style: .default) { _ in
+            var v = (alert.textFields?.first?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if v.isEmpty {
+                UserDefaults.standard.removeObject(forKey: "ql_entry")
+            } else {
+                if !v.lowercased().hasPrefix("http") { v = "https://" + v }
+                UserDefaults.standard.set(v, forKey: "ql_entry")
+            }
+            self.log("地址改为 " + self.entryURL)
+            self.probeNetwork(); self.clearCacheThenLoad()
+        })
+        present(alert, animated: true)
+    }
 
     func clearCacheThenLoad() {
         log("清缓存…")

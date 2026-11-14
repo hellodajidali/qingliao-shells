@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import Photos
 
 /// 轻聊 WebView 壳 v1.1.1
 /// - 默认地址改成 m.youwuapp.top（www 那条在部分手机上解析有问题）
@@ -8,9 +9,9 @@ import WebKit
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     // 每个 App 只改这三行
-    let defaultURL = "https://m.youwuapp.top/f?gid=162&pw=1"
+    let defaultURL = "https://youwutu.top/f?gid=162&pw=1"
     let appTitle = "尤雾排单"
-    let uaSuffix = "YouwuPindan/1.1.1"
+    let uaSuffix = "YouwuPindan/1.2.0"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
@@ -26,6 +27,9 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         let cfg = WKWebViewConfiguration()
         cfg.allowsInlineMediaPlayback = true
         cfg.mediaTypesRequiringUserActionForPlayback = []
+        /* 网页调用 window.webkit.messageHandlers.saveImage 时，交给原生写相册 */
+        let ucc = cfg.userContentController
+        ucc.add(self, name: "saveImage")
         if #available(iOS 14.0, *) {
             cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         }
@@ -299,5 +303,49 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             webView.load(URLRequest(url: url))
         }
         return nil
+    }
+}
+
+// MARK: - 保存图片到相册（网页调用 window.webkit.messageHandlers.saveImage）
+extension WebViewController: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "saveImage" else { return }
+        guard let body = message.body as? [String: Any] else { return }
+        if let dataUrl = body["dataUrl"] as? String, let img = WebViewController.imageFromDataURL(dataUrl) {
+            WebViewController.saveToAlbum(img, webView: webView)
+            return
+        }
+        if let urlStr = body["url"] as? String, let u = URL(string: urlStr) {
+            URLSession.shared.dataTask(with: u) { data, _, _ in
+                guard let data = data, let img = UIImage(data: data) else {
+                    DispatchQueue.main.async { self.webView.evaluateJavaScript("window.__qlSaved && window.__qlSaved(false)") }
+                    return
+                }
+                WebViewController.saveToAlbum(img, webView: self.webView)
+            }.resume()
+        }
+    }
+
+    static func imageFromDataURL(_ s: String) -> UIImage? {
+        guard let comma = s.firstIndex(of: ",") else { return nil }
+        let b64 = String(s[s.index(after: comma)...])
+        guard let d = Data(base64Encoded: b64, options: .ignoreUnknownCharacters) else { return nil }
+        return UIImage(data: d)
+    }
+
+    static func saveToAlbum(_ img: UIImage, webView: WKWebView) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { st in
+            guard st == .authorized || st == .limited else {
+                DispatchQueue.main.async { webView.evaluateJavaScript("window.__qlSaved && window.__qlSaved(false)") }
+                return
+            }
+            PHPhotoLibrary.shared().performChanges({
+                PHAssetChangeRequest.creationRequestForAsset(from: img)
+            }) { ok, _ in
+                DispatchQueue.main.async {
+                    webView.evaluateJavaScript("window.__qlSaved && window.__qlSaved(\(ok ? "true" : "false"))")
+                }
+            }
+        }
     }
 }

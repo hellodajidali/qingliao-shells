@@ -2,8 +2,8 @@ import UIKit
 import WebKit
 import Photos
 
-/// 轻聊 WebView 壳 v1.4.0
-/// - v1.4.0：文件（ipa/zip/xlsx…）不再在网页里打开成一页 HTML；改成 App 内下载 → 系统分享面板（可选「存储到文件」/用别的 App 打开）
+/// 轻聊 WebView 壳 v1.4.1
+/// - v1.4.1：文件（ipa/zip/xlsx…）不再在网页里打开成一页 HTML；改成 App 内下载 → 系统分享面板（可选「存储到文件」/用别的 App 打开）
 /// - 左下角悬浮「‹ 返回」：只有网页真的转过页（canGoBack）时才出现
 /// - 右上角一个很淡的齿轮：刷新 / 换地址用
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
@@ -11,7 +11,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     // 每个 App 只改这三行
     let defaultURL = "https://youwutu.top/houtai"
     let appTitle = "轻聊"
-    let uaSuffix = "QingliaoAdmin/1.4.0"
+    let uaSuffix = "QingliaoAdmin/1.4.1"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
@@ -48,6 +48,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         let ucc = cfg.userContentController
         ucc.add(self, name: "saveImage")
         ucc.add(self, name: "downloadFile")
+        ucc.add(self, name: "saveFile")
         if #available(iOS 14.0, *) {
             cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         }
@@ -97,7 +98,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
         ])
 
-        /* v1.4.0 左下角悬浮「‹ 返回」：网页真转过页才出现（1.3.1 去掉边缘手势后，进到文件页/外链页就退不回来） */
+        /* v1.4.1 左下角悬浮「‹ 返回」：网页真转过页才出现（1.3.1 去掉边缘手势后，进到文件页/外链页就退不回来） */
         backBtn = UIButton(type: .system)
         backBtn.setTitle("‹", for: .normal)
         backBtn.titleLabel?.font = UIFont.systemFont(ofSize: 26, weight: .semibold)
@@ -116,7 +117,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         ])
         webView.addObserver(self, forKeyPath: "canGoBack", options: [.new], context: nil)
 
-        log("启动 v1.4.0 · " + entryURL)
+        log("启动 v1.4.1 · " + entryURL)
         clearCacheThenLoad()
     }
 
@@ -253,7 +254,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
         if let http = navigationResponse.response as? HTTPURLResponse {
             log("HTTP \(http.statusCode) " + (http.url?.host ?? ""))
-            /* v1.4.0：网页显示不了的东西（ipa / zip / xlsx…）不让它进 webview，改成 App 内下载 + 分享面板 */
+            /* v1.4.1：网页显示不了的东西（ipa / zip / xlsx…）不让它进 webview，改成 App 内下载 + 分享面板 */
             let disp = (http.value(forHTTPHeaderField: "content-disposition") ?? "").lowercased()
             let isFile = !navigationResponse.canShowMIMEType
                 || disp.contains("attachment")
@@ -504,6 +505,21 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 // MARK: - 网页调原生（保存图片 / 下载文件）
 extension WebViewController: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        /* 网页里做出来的文件（导出的 Excel 等）交过来：存临时文件 → 系统分享面板 */
+        if message.name == "saveFile" {
+            guard let body = message.body as? [String: Any],
+                  let dataUrl = body["dataUrl"] as? String,
+                  let data = WebViewController.dataFromDataURL(dataUrl) else { return }
+            let nm = (body["name"] as? String) ?? ""
+            let fname = nm.isEmpty ? "文件" : nm.replacingOccurrences(of: "/", with: "_")
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ql-dl", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dst = dir.appendingPathComponent(fname)
+            try? FileManager.default.removeItem(at: dst)
+            do { try data.write(to: dst) } catch { self.alert("保存失败", error.localizedDescription); return }
+            self.shareFile(dst)
+            return
+        }
         if message.name == "downloadFile" {
             guard let body = message.body as? [String: Any], let s = body["url"] as? String, let u = URL(string: s) else { return }
             let nm = (body["name"] as? String) ?? ""
@@ -525,6 +541,12 @@ extension WebViewController: WKScriptMessageHandler {
                 WebViewController.saveToAlbum(img, webView: self.webView)
             }.resume()
         }
+    }
+
+    static func dataFromDataURL(_ s: String) -> Data? {
+        guard let comma = s.firstIndex(of: ",") else { return nil }
+        let b64 = String(s[s.index(after: comma)...])
+        return Data(base64Encoded: b64, options: .ignoreUnknownCharacters)
     }
 
     static func imageFromDataURL(_ s: String) -> UIImage? {

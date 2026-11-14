@@ -38,7 +38,8 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
+        // 关掉系统自带的边缘返回手势，改用下面自己加的（否则两个手势抢，网页的 __qlBack 收不到）
+        webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false     // 长按别弹系统预览，二级菜单自己做
         /* 左右两个方向的边缘滑动都当「返回」：
            页面是单页应用，退历史常常没反应，所以先问网页自己（window.__qlBack） */

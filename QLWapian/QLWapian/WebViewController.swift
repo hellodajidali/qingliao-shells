@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Photos
 
-/// 轻聊 WebView 壳 v1.3.0（左右滑返回 + 长按不受系统菜单干扰）
+/// 轻聊 WebView 壳 v1.3.1（去掉左右边缘滑动返回，长按不受系统菜单干扰）
 /// - 默认地址改成 m.youwuapp.top（www 那条在部分手机上解析有问题）
 /// - 不再常驻黑色日志框；只有「打开失败」时才会把日志显示在错误页里
 /// - 右上角一个很淡的齿轮：换域名/换地址用
@@ -11,7 +11,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     // 每个 App 只改这三行
     let defaultURL = "https://youwutu.top/f?gid=162&pw=1"
     let appTitle = "尤雾排单"
-    let uaSuffix = "YouwuPindan/1.3.0"
+    let uaSuffix = "YouwuPindan/1.3.1"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
@@ -38,16 +38,10 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        // 关掉系统自带的边缘返回手势，改用下面自己加的（否则两个手势抢，网页的 __qlBack 收不到）
+        // 系统边缘手势照旧关掉（网页是单页应用，退历史没意义）
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false     // 长按别弹系统预览，二级菜单自己做
-        /* 左右两个方向的边缘滑动都当「返回」：
-           页面是单页应用，退历史常常没反应，所以先问网页自己（window.__qlBack） */
-        for edge in [UIRectEdge.left, UIRectEdge.right] {
-            let pan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgePan(_:)))
-            pan.edges = edge
-            webView.addGestureRecognizer(pan)
-        }
+        /* v1.3.1：自定义的左右边缘滑动返回已移除（用户实测无效，去掉免得误触） */
 
         /* 网页不再铺到状态栏下面（以前标题被时间/电量压住），也不再自己算安全区 */
         webView.scrollView.contentInsetAdjustmentBehavior = .never
@@ -86,7 +80,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
         ])
 
-        log("启动 v1.3.0 · " + entryURL)
+        log("启动 v1.3.1 · " + entryURL)
         clearCacheThenLoad()
     }
 
@@ -313,21 +307,6 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             webView.load(URLRequest(url: url))
         }
         return nil
-    }
-
-    // MARK: - 左右滑动返回
-    @objc func edgePan(_ g: UIScreenEdgePanGestureRecognizer) {
-        guard g.state == .ended else { return }
-        goBackSmart()
-    }
-
-    /// 先让网页关掉自己的弹层/退回列表；网页说没东西可关，再退浏览器历史
-    func goBackSmart() {
-        webView.evaluateJavaScript("(function(){try{return !!(window.__qlBack && window.__qlBack())}catch(e){return false}})()") { [weak self] r, _ in
-            guard let self = self else { return }
-            if let ok = r as? Bool, ok { return }
-            if self.webView.canGoBack { self.webView.goBack() }
-        }
     }
 
 }

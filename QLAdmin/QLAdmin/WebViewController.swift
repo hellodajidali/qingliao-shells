@@ -2,21 +2,20 @@ import UIKit
 import WebKit
 import Photos
 
-/// 轻聊 WebView 壳 v1.4.1
+/// 轻聊 WebView 壳 v1.4.2
+/// - v1.4.2：去掉挡住底部功能键的原生左下角返回；转页返回改由页面内顶部按钮提供
 /// - v1.4.1：文件（ipa/zip/xlsx…）不再在网页里打开成一页 HTML；改成 App 内下载 → 系统分享面板（可选「存储到文件」/用别的 App 打开）
-/// - 左下角悬浮「‹ 返回」：只有网页真的转过页（canGoBack）时才出现
 /// - 右上角一个很淡的齿轮：刷新 / 换地址用
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     // 每个 App 只改这三行
     let defaultURL = "https://youwutu.top/houtai"
     let appTitle = "轻聊"
-    let uaSuffix = "QingliaoAdmin/1.4.1"
+    let uaSuffix = "QingliaoAdmin/1.4.2"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
 
     var webView: WKWebView!
     var gear: UIButton!
-    var backBtn: UIButton!
     var webBottom: NSLayoutConstraint!
     var retryBox: UIView?
     var hud: UIView?
@@ -49,6 +48,9 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         ucc.add(self, name: "saveImage")
         ucc.add(self, name: "downloadFile")
         ucc.add(self, name: "saveFile")
+        ucc.addUserScript(WKUserScript(source: WebViewController.pageBackScript(),
+                                       injectionTime: .atDocumentEnd,
+                                       forMainFrameOnly: true))
         if #available(iOS 14.0, *) {
             cfg.defaultWebpagePreferences.allowsContentJavaScript = true
         }
@@ -57,7 +59,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        // 系统边缘手势关掉（网页是单页应用，退历史没意义；返回交给左下角的悬浮按钮）
+        // 系统边缘手势关掉；真正转页后由页面内的顶部返回按钮退一层
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false     // 长按别弹系统预览，二级菜单自己做
 
@@ -95,48 +97,11 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             gear.widthAnchor.constraint(equalToConstant: 30),
             gear.heightAnchor.constraint(equalToConstant: 30),
             gear.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -2),
-            gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -4),
         ])
 
-        /* v1.4.1 左下角悬浮「‹ 返回」：网页真转过页才出现（1.3.1 去掉边缘手势后，进到文件页/外链页就退不回来） */
-        backBtn = UIButton(type: .system)
-        backBtn.setTitle("‹", for: .normal)
-        backBtn.titleLabel?.font = UIFont.systemFont(ofSize: 26, weight: .semibold)
-        backBtn.setTitleColor(.white, for: .normal)
-        backBtn.backgroundColor = UIColor(white: 0, alpha: 0.45)
-        backBtn.layer.cornerRadius = 19
-        backBtn.translatesAutoresizingMaskIntoConstraints = false
-        backBtn.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
-        backBtn.isHidden = true
-        view.addSubview(backBtn)
-        NSLayoutConstraint.activate([
-            backBtn.widthAnchor.constraint(equalToConstant: 38),
-            backBtn.heightAnchor.constraint(equalToConstant: 38),
-            backBtn.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 10),
-            backBtn.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-        ])
-        webView.addObserver(self, forKeyPath: "canGoBack", options: [.new], context: nil)
-
-        log("启动 v1.4.1 · " + entryURL)
+        log("启动 v1.4.2 · " + entryURL)
         clearCacheThenLoad()
-    }
-
-    deinit {
-        webView?.removeObserver(self, forKeyPath: "canGoBack")
-    }
-
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
-        if keyPath == "canGoBack" { updateBack() }
-    }
-
-    func updateBack() {
-        let on = webView.canGoBack
-        backBtn.isHidden = !on
-        backBtn.alpha = on ? 1 : 0
-    }
-
-    @objc func backTapped() {
-        if webView.canGoBack { webView.goBack() } else { updateBack() }
     }
 
     func log(_ s: String) {
@@ -247,7 +212,6 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         log("收到内容")
-        updateBack()
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -275,7 +239,6 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         hideRetry()
         if let rc = webView.scrollView.refreshControl, rc.isRefreshing { rc.endRefreshing() }
-        updateBack()
         log("完成")
     }
 
@@ -393,6 +356,44 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     }
 
     // MARK: - 文件下载 → 系统分享面板（可选「存储到文件」/ 用别的 App 打开）
+    static func pageBackScript() -> String {
+        """
+        (function () {
+          if (window.__qlPageBackReady) return;
+          window.__qlPageBackReady = true;
+          function shown(el) {
+            var s = getComputedStyle(el);
+            return s.display !== 'none' && s.visibility !== 'hidden' && el.getBoundingClientRect().width > 0;
+          }
+          function hasOwnBack() {
+            if (document.querySelector('[data-page-back],#btnBack,#back')) return true;
+            var els = document.querySelectorAll('button,a,[role="button"]');
+            for (var i = 0; i < els.length; i++) {
+              var t = (els[i].textContent || '').replace(/\\s+/g, '');
+              if (shown(els[i]) && (t === '返回' || t === '返回上一级' || t === '‹返回' || t.toLowerCase() === 'back')) return true;
+            }
+            return false;
+          }
+          function ensure() {
+            if (hasOwnBack()) return;
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.id = 'qlPageBack';
+            b.textContent = '‹ 返回';
+            b.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;display:none;height:32px;padding:0 11px;border:1px solid rgba(0,0,0,.14);border-radius:9px;background:rgba(255,255,255,.94);color:#333;font:13px/30px -apple-system,BlinkMacSystemFont,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.14);';
+            function sync() { b.style.display = history.length > 1 ? 'block' : 'none'; }
+            b.onclick = function () { if (history.length > 1) history.back(); };
+            (document.body || document.documentElement).appendChild(b);
+            addEventListener('pageshow', sync);
+            addEventListener('popstate', sync);
+            sync();
+          }
+          if (document.readyState === 'loading') addEventListener('DOMContentLoaded', ensure);
+          else ensure();
+        })();
+        """
+    }
+
     static func isDownloadURL(_ url: URL?) -> Bool {
         guard let url = url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         let ext = url.pathExtension.lowercased()

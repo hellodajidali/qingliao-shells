@@ -2,17 +2,32 @@ import UIKit
 import WebKit
 import Photos
 
-/// 尤雾排单 WebView 壳 v1.4.2
+/// 尤雾排单 WebView 壳 v1.4.3
+/// - v1.4.3：入口域名统一到 wuhuago.top（老安装里存的 youwutu 地址自动迁移）
 /// - v1.4.2：去掉挡住底部功能键的原生左下角返回；转页返回改由页面内顶部按钮提供
 /// - v1.4.1：文件（ipa/zip/xlsx…）不再在网页里打开成一页 HTML；改成 App 内下载 → 系统分享面板（可选「存储到文件」/用别的 App 打开）
 /// - 右上角一个很淡的齿轮：刷新 / 换地址用
 class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     // 每个 App 只改这三行
-    let defaultURL = "https://youwutu.top/f?gid=162&pw=1"
+    let defaultURL = "https://wuhuago.top/f?gid=162&pw=1"
     let appTitle = "尤雾排单"
-    let uaSuffix = "YouwuPindan/1.4.2"
+    let uaSuffix = "YouwuPindan/1.4.3"
     var entryURL: String { return UserDefaults.standard.string(forKey: "ql_entry") ?? defaultURL }
+
+    /// v1.4.3 一次性迁移：老版本把入口存成 youwutu/youwuapp，统一改到 wuhuago（只换主机名，路径与参数不动）
+    private func migrateEntryHost() {
+        let mark = "ql_entry_migrate_143"
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: mark) else { return }
+        d.set(true, forKey: mark)
+        guard var saved = d.string(forKey: "ql_entry") else { return }
+        var changed = false
+        for old in ["youwutu.top", "youwuapp.top"] {
+            if let r = saved.range(of: old) { saved.replaceSubrange(r, with: "wuhuago.top"); changed = true }
+        }
+        if changed { d.set(saved, forKey: "ql_entry") }
+    }
 
     var webView: WKWebView!
     var gear: UIButton!
@@ -31,6 +46,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        migrateEntryHost()
         view.backgroundColor = .white
 
         let cfg = WKWebViewConfiguration()
@@ -93,7 +109,7 @@ class WebViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
             gear.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: -4),
         ])
 
-        log("启动 v1.4.2 · " + entryURL)
+        log("启动 v1.4.3 · " + entryURL)
         clearCacheThenLoad()
     }
 
